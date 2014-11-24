@@ -30,8 +30,8 @@ using Rock.Web.UI.Controls;
 
 namespace RockWeb.Plugins.org_crossroadschristian.Groups
 {
-    [DisplayName( "Group Member List" )]
-    [Category( "Groups" )]
+    [DisplayName( "Group Member Take Attendance" )]
+    [Category( "Crossroads > Groups" )]
     [Description( "Lists all the members of the given group." )]
 
     [IntegerField("Photo Size", "The size of the preview photo. Default is 65.",false,65)]
@@ -41,10 +41,14 @@ namespace RockWeb.Plugins.org_crossroadschristian.Groups
     public partial class GroupMemberList : RockBlock, ISecondaryBlock
     {
         #region Private Variables
+        // used for private variables
+        string size = "65";
+        string sizepx = "65px";
 
         private DefinedValueCache _inactiveStatus = null;
         private Group _group = null;
         BootstrapButton _bbtnTakeAttendance = new BootstrapButton();
+        BootstrapButton _bbtnDidNotMeet = new BootstrapButton();
 
         #endregion
 
@@ -99,12 +103,25 @@ namespace RockWeb.Plugins.org_crossroadschristian.Groups
                     gGroupMembers.IsDeleteEnabled = canEditBlock;
 
                     // Add attribute columns
-                    AddAttributeColumns();
+                    //AddAttributeColumns();
 
                     // Add delete column
-                    var deleteField = new DeleteField();
-                    gGroupMembers.Columns.Add( deleteField );
-                    deleteField.Click += DeleteGroupMember_Click;
+                    //var deleteField = new DeleteField();
+                    //gGroupMembers.Columns.Add( deleteField );
+                    //deleteField.Click += DeleteGroupMember_Click;
+
+
+                    //Check if attendance has already been taken for that week.
+
+                    _bbtnTakeAttendance.Text = "Save Attendance";
+                    _bbtnTakeAttendance.Click += new EventHandler( bbtnTakeAttendance_Click );
+                    _bbtnTakeAttendance.CssClass = "btn btn-primary pull-left";
+                    gGroupMembers.Actions.AddCustomActionControl( _bbtnTakeAttendance );
+                    _bbtnTakeAttendance.Text = "Did Not Meet";
+                    _bbtnTakeAttendance.Click += new EventHandler( bbtnDidNotMeet_Click );
+                    _bbtnTakeAttendance.CssClass = "btn btn-primary pull-left";
+                    gGroupMembers.Actions.AddCustomActionControl( _bbtnDidNotMeet );
+                    gGroupMembers.Actions.ShowExcelExport = false;
                 }
             }
         }
@@ -388,7 +405,7 @@ namespace RockWeb.Plugins.org_crossroadschristian.Groups
                         qry = qry.Where( m => roles.Contains( m.GroupRoleId ) );
                     }
 
-                    // Filter by Sttus
+                    // Filter by Status
                     var statuses = new List<GroupMemberStatus>();
                     foreach ( string status in rFilter.GetUserPreference( "Status" ).Split( ';' ) )
                     {
@@ -513,6 +530,81 @@ namespace RockWeb.Plugins.org_crossroadschristian.Groups
         protected string FormatPersonLink( string personId )
         {
             return ResolveRockUrl( string.Format( "~/Person/{0}", personId ) );
+        }
+
+        /// <summary>
+        /// Marks the selected people/photos as verified by setting their group member status Active.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        protected void bbtnTakeAttendance_Click( object sender, EventArgs e )
+        {
+            nbMessage.Visible = true;
+
+            int count = 0;
+            RockContext rockContext = new RockContext();
+            GroupService groupService = new GroupService( rockContext );
+            //Group group = groupService.Get( Rock.SystemGuid.Group.GROUP_PHOTO_REQUEST.AsGuid() );   //change this so it gets the current group
+            var attendanceList = new List<Attendance>();
+            var groupMemberList = new List<Person>();
+
+            //set all member's attendace to DidNotAttend then for those that are selected, set it to DidAttend.
+
+            foreach (var member in _group.Members)
+	{
+        var attendance = new Attendance();
+        attendance.CreatedByPersonAliasId = CurrentPersonAliasId;
+        attendance.ModifiedByPersonAliasId = CurrentPersonAliasId;
+        attendance.CreatedDateTime = DateTime.Today;
+        attendance.ModifiedDateTime = DateTime.Today;
+        attendance.StartDateTime = null; //set to the date picker time or try to do it another way. Also check to see if attendance has already been added for this date.
+        attendance.EndDateTime = null; //same as start time value
+        attendance.DidAttend = false;
+        attendance.CampusId = _group.CampusId; //campus is needed for attendance to show in attendance analysis.
+        attendance.Group = _group;
+        attendance.PersonAliasId = member.PersonId;
+
+        attendanceList.Add( attendance );
+
+	}
+
+            GroupMember groupMember = null;
+
+            var itemsSelected = new List<int>();
+
+            gGroupMembers.SelectedKeys.ToList().ForEach( i => itemsSelected.Add( i.ToString().AsInteger() ) );
+
+            if ( itemsSelected.Any() )
+            {
+                
+
+                foreach ( int currentRowsPersonId in itemsSelected )
+                {
+                    groupMember = _group.Members.Where( m => m.PersonId == currentRowsPersonId ).FirstOrDefault();
+                    if ( groupMember != null )
+                    {
+                        var attendance = new Attendance();
+                        count++;
+                        groupMember.GroupMemberStatus = GroupMemberStatus.Active; //change this to enter attendance.
+                        
+                    }
+                }
+            }
+
+            if ( count > 0 )
+            {
+                nbMessage.NotificationBoxType = NotificationBoxType.Success;
+                nbMessage.Text = string.Format( "Attendance recorded for {0} member{1} ", count, count > 1 ? "s" : "" );
+            }
+            else
+            {
+                nbMessage.NotificationBoxType = NotificationBoxType.Warning;
+                nbMessage.Text = "No members selected.";
+            }
+            rockContext.SaveChanges();
+            //_photoRequestGroup = group;
+
+            BindGroupMembersGrid();
         }
 
         #endregion
